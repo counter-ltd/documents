@@ -9,6 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- "Message" button on user profiles (logged-in, non-self only) links directly to the conversation thread
+- Private messaging: users can send direct messages to each other. `/messages` shows the inbox sorted by most recent activity with unread badges; `/messages/:username` shows a conversation thread with a send form. Messages are marked read automatically when the thread is opened.
+- `GET /messages` — paginated inbox listing all conversations with last-message preview and unread counts
+- `GET /messages/:username` — cursor-paginated message thread with a given user
+- `POST /messages/:username` — send a message; creates the conversation on first use
+- `POST /messages/:username/read` — mark all messages from a user as read
+
+### Added
 - Account switching: sign into multiple accounts and switch between them from the nav footer without logging out. The `▾` toggle opens a tray showing all stored accounts; clicking one switches instantly. "+ add account" links to the login or register page to add another.
 - `/actions/switch-account` endpoint: POST with a `userId` to reorder the session list and activate that account on the next request.
 - Login and register pages now accept `?add=1` to skip the "already signed in" redirect, allowing a second account to be added while the first is still active.
@@ -44,6 +52,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Form resubmission dialog on refresh after a failed topic create: the `/topics/new` form uses `use:enhance` so failures go through `fetch` and the URL stays clean
 - Mobile viewport: added `maximum-scale=1, user-scalable=no` to prevent unwanted zoom on input focus
 - Mobile layout: `overflow-x: hidden` on `html` and `body` prevents horizontal scroll bleed
+- Changelog page rendered blank when the CHANGELOG.md had multiple `### Added` or `### Changed` sections within one release; the parser now merges duplicate category headings into one
 
 ## [0.1.0] - 2026-06-04
 
