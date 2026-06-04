@@ -33,6 +33,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Verified trust badges on profiles: a transparent, itemized list of proven facts (verified email, linked accounts), display only, never used to gate features or influence ranking
 - Linked accounts: connect external profiles (GitHub, Bandcamp, a personal site, and more) and verify ownership via a rel="me" link-back
 - Account deletion: a permanent hard delete of your account and personal data, with a typed confirmation and a written confirmation once it's done
-- Public data disclosure — every category of data collected, its purpose, and its retention period, documented in DATA-MODEL.md
+- Public data disclosure at /data — every category of data collected, its purpose, and its retention period, readable without an account and sourced from DATA-MODEL.md
 - Source-available under the Counter Social License (CSL) v1.0, with the license notice on every source file
 - "Built with Counter" attribution on every page, linking to the source — the transparency indicator required by the CSL
