@@ -9,6 +9,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Account switching: sign into multiple accounts and switch between them from the nav footer without logging out. The `▾` toggle opens a tray showing all stored accounts; clicking one switches instantly. "+ add account" links to the login or register page to add another.
+- `/actions/switch-account` endpoint: POST with a `userId` to reorder the session list and activate that account on the next request.
+- Login and register pages now accept `?add=1` to skip the "already signed in" redirect, allowing a second account to be added while the first is still active.
+
+### Changed
+- Session storage redesigned from a single `counter_refresh` cookie to a `counter_accounts` cookie holding a JSON array of every signed-in account. The first entry is always the active one; switching reorders it. Refresh tokens stay server-only inside the httpOnly cookie.
+- Logging out of the current account now activates the next stored account automatically (if one exists) rather than signing out completely.
+- Account deletion removes only the deleted account from the local session list; any other stored accounts remain active.
+
+### Added
 - Topics system: users can create, join, and leave topics (communities), each with a member count and post count
 - `GET /topics` — list all topics sorted by member count, with viewer membership state
 - `POST /topics` — create a new topic; creator auto-joins on creation
@@ -24,6 +34,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `/topics` added to the main navigation
 
 ### Changed
+- Likes, reposts, and follows now update instantly without a page reload; the button state and counts flip optimistically in the client and the server call happens in the background
 - Composer accepts an optional `topicId` prop; when pre-scoped (e.g. on a topic page) the topic is set via a hidden input rather than a selector
 - Home page and feed page server loads now fetch topics in parallel to power the Composer selector
 - Post serializer includes a `topic` field (id, slug, name) on every post that belongs to a topic
