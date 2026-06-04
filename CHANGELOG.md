@@ -8,6 +8,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Topics system: users can create, join, and leave topics (communities), each with a member count and post count
+- `GET /topics` — list all topics sorted by member count, with viewer membership state
+- `POST /topics` — create a new topic; creator auto-joins on creation
+- `GET /topics/:slug` — fetch a single topic with counts and viewer state
+- `GET /topics/:slug/posts` — cursor-paginated feed of posts in a topic
+- `POST /topics/:slug/join` and `DELETE /topics/:slug/join` — join and leave endpoints
+- `/topics` discover page: browse all topics, see member and post counts, join or leave inline
+- `/topics/new` page: dedicated topic creation form, works without JavaScript
+- `/topics/:slug` topic page: topic header with counts, join button, and a post feed scoped to the topic
+- Composer topic selector: when composing from the feed or home page, a dropdown lets you post into any topic
+- Topic badge on post cards: posts that belong to a topic show a linked `▦ TopicName` chip
+- `posts.topic_id` column: nullable foreign key linking a post to a topic
+- `/topics` added to the main navigation
+
+### Changed
+- Composer accepts an optional `topicId` prop; when pre-scoped (e.g. on a topic page) the topic is set via a hidden input rather than a selector
+- Home page and feed page server loads now fetch topics in parallel to power the Composer selector
+- Post serializer includes a `topic` field (id, slug, name) on every post that belongs to a topic
+
+### Fixed
+- Topic creation no longer relies on a client-side JS toggle; "New topic" is a plain link to `/topics/new`, so it works immediately on page load without hydration
+- Form resubmission dialog on refresh after a failed topic create: the `/topics/new` form uses `use:enhance` so failures go through `fetch` and the URL stays clean
+- Mobile viewport: added `maximum-scale=1, user-scalable=no` to prevent unwanted zoom on input focus
+- Mobile layout: `overflow-x: hidden` on `html` and `body` prevents horizontal scroll bleed
+
 ## [0.1.0] - 2026-06-04
 
 ### Added
