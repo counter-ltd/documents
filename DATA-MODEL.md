@@ -236,6 +236,31 @@ algorithm_changelog
 
 ---
 
+## Retention
+
+The CSL requires us to state how long every category of data is kept. The rule
+is simple: identity-linked data lives exactly as long as the account does, and
+nothing is kept "just in case."
+
+| Data | Purpose | Retention |
+|------|---------|-----------|
+| `users` | Identity, login | Life of the account. Deleted within 30 days of account deletion. |
+| `sessions` | Keep you logged in across devices | Until logout or token expiry, whichever comes first. Wiped on account deletion. |
+| `posts` | Your content | Life of the account, or until you delete the post. Removed within 30 days of account deletion. |
+| `media` | Attachments on posts | Same as the parent post. Files purged from storage within 24 hours of deletion. |
+| `follows`, `likes`, `reposts` | The social graph and interactions | Life of the account. Cascade-deleted with it. |
+| `tags`, `post_tags` | Topic discovery | Tag rows are shared and persist; the link to your post is removed when the post is. |
+| `notifications` | Telling you what happened | Life of the account. Cascade-deleted with it. |
+| `themes`, `profile_themes` | Themes you published or applied | Life of the account. Cascade-deleted with it. |
+| `integrations` | Public links to other platforms | Life of the account, or until you unlink. No private tokens stored. |
+| `post_views` | Anonymous aggregate view counts | Retained indefinitely as counts only. Never tied to a person, so nothing identifying survives. |
+| `algorithm_changelog` | Public record of ranking changes | Retained permanently. Contains no user data. |
+
+If a category is not listed here, it is not collected. This table is updated
+within 7 days of any change to data collection, as the CSL requires.
+
+---
+
 ## Data Deletion
 
 When a user deletes their account:
