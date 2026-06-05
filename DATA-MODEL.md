@@ -10,16 +10,44 @@ The core identity record. Passwords are never stored — hashed with bcrypt, imm
 
 ```sql
 users
+  id                          uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  username                    text          UNIQUE NOT NULL
+  display_name                text
+  bio                         text
+  avatar_url                  text
+  email                       text          UNIQUE NOT NULL
+  password_hash               text          NOT NULL
+  verified                    boolean       DEFAULT false
+  online_status_enabled       boolean       DEFAULT false  -- off by default; user must opt in
+  online_status_visibility    text          DEFAULT 'everyone'  -- 'everyone' | 'followers' | 'mutualFollowers'
+  last_seen_enabled           boolean       DEFAULT false
+  last_seen_visibility        text          DEFAULT 'everyone'
+  last_seen_at                timestamptz                  -- updated by POST /users/me/heartbeat
+  heartbeat_interval_seconds  integer       DEFAULT 300    -- client fires heartbeat this often; server online window = interval + 30s
+  created_at                  timestamptz   DEFAULT now()
+  updated_at                  timestamptz   DEFAULT now()
+```
+
+`online_status_enabled` and `last_seen_enabled` are independent toggles. Each has its own visibility column that controls who can see that field. Both are off by default. `last_seen_at` is updated every time the client calls the heartbeat endpoint, regardless of toggle state, so re-enabling a feature shows accurate data immediately.
+
+---
+
+## device_keys
+
+Per-device E2EE key pairs. One row per registered (user, device) pair. A user
+can have multiple registered devices, each with its own P-256 key pair. Senders
+encrypt a separate copy of each message for every device so all of them can
+decrypt. The private key never leaves the device; only the public half is stored
+here.
+
+```sql
+device_keys
   id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
-  username        text          UNIQUE NOT NULL
-  display_name    text
-  bio             text
-  avatar_url      text
-  email           text          UNIQUE NOT NULL
-  password_hash   text          NOT NULL
-  verified        boolean       DEFAULT false
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
+  device_id       text          NOT NULL  -- stable UUID generated on the client device
+  public_key      text          NOT NULL  -- SPKI base64 P-256 public key
   created_at      timestamptz   DEFAULT now()
-  updated_at      timestamptz   DEFAULT now()
+  UNIQUE (user_id, device_id)
 ```
 
 ---
@@ -119,6 +147,46 @@ reposts
 
 ---
 
+## conversations
+
+One row per pair of participants. Participant ids are stored in lexicographic
+order (participantA < participantB) so a unique index on the pair prevents
+duplicate conversation rows without a read-before-write.
+
+```sql
+conversations
+  id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  participant_a   uuid          REFERENCES users(id) ON DELETE CASCADE
+  participant_b   uuid          REFERENCES users(id) ON DELETE CASCADE
+  last_message_at timestamptz   DEFAULT now()  -- drives inbox sort order
+  created_at      timestamptz   DEFAULT now()
+  UNIQUE (participant_a, participant_b)
+```
+
+---
+
+## messages
+
+Individual entries within a conversation. `body` is either plaintext (legacy),
+AES-256-GCM server-encrypted ciphertext, or a `v3:` multi-device E2EE payload.
+Plaintext is never written to the database in either encryption path.
+
+`kind` distinguishes real messages from system events. Screenshot entries have
+an empty body and are excluded from unread counts and inbox last-message previews.
+
+```sql
+messages
+  id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  conversation_id uuid          REFERENCES conversations(id) ON DELETE CASCADE
+  sender_id       uuid          REFERENCES users(id) ON DELETE CASCADE
+  body            text          NOT NULL  -- plaintext, AES ciphertext, or v3: E2EE payload
+  kind            text          NOT NULL DEFAULT 'message'  -- 'message' | 'screenshot'
+  read            boolean       DEFAULT false  -- flipped when the recipient views the thread
+  created_at      timestamptz   DEFAULT now()
+```
+
+---
+
 ## tags
 
 Hashtags extracted from post bodies at write time.
@@ -143,11 +211,48 @@ post_tags
 notifications
   id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
   user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
-  type            text          NOT NULL  -- 'like' | 'repost' | 'reply' | 'follow' | 'mention'
+  type            text          NOT NULL  -- 'like' | 'repost' | 'reply' | 'follow' | 'mention' | 'message'
   actor_id        uuid          REFERENCES users(id) ON DELETE CASCADE
   post_id         uuid          REFERENCES posts(id) ON DELETE SET NULL
+  conversation_id uuid          REFERENCES conversations(id) ON DELETE CASCADE  -- set only for 'message'
   read            boolean       DEFAULT false
   created_at      timestamptz   DEFAULT now()
+```
+
+---
+
+## notification_preferences
+
+A user's muted notification types. The presence of a row means "don't send me
+this type", on any channel. Absence means on, so every account defaults to
+all-on with no per-user row to create up front.
+
+```sql
+notification_preferences
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
+  type            text          NOT NULL  -- a notifications.type value; row present = muted
+  created_at      timestamptz   DEFAULT now()
+  PRIMARY KEY (user_id, type)
+```
+
+---
+
+## devices
+
+Registered push devices, one row per APNs token. Registration is opt-in: the
+client never auto-uploads a token; the user registers from Settings > Privacy >
+Devices. `name` is a user-supplied label (e.g. "John's iPhone") so multiple
+devices are distinguishable in the settings panel.
+
+```sql
+devices
+  id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
+  platform        text          NOT NULL  -- 'ios'
+  token           text          NOT NULL UNIQUE
+  name            text          NULL      -- user-visible label; null for pre-name devices
+  created_at      timestamptz   DEFAULT now()
+  last_seen_at    timestamptz   DEFAULT now()
 ```
 
 ---
@@ -250,7 +355,11 @@ nothing is kept "just in case."
 | `media` | Attachments on posts | Same as the parent post. Files purged from storage within 24 hours of deletion. |
 | `follows`, `likes`, `reposts` | The social graph and interactions | Life of the account. Cascade-deleted with it. |
 | `tags`, `post_tags` | Topic discovery | Tag rows are shared and persist; the link to your post is removed when the post is. |
+| `conversations`, `messages` | Private direct messages | Life of the account. Cascade-deleted with it. Screenshot events are stored as message rows with `kind = 'screenshot'` and are covered by the same retention. |
 | `notifications` | Telling you what happened | Life of the account. Cascade-deleted with it. |
+| `notification_preferences` | Which notification types you've muted | Life of the account. Cascade-deleted with it. |
+| `device_keys` | E2EE public key per registered device | Life of the account, or until the device re-registers with a new key (upsert replaces the old row). Cascade-deleted with the account. The private key is never stored here. |
+| `devices` | Push delivery address (opaque APNs token) | Life of the account, or until you sign out on that device. Cascade-deleted with the account. No device or location data. |
 | `themes`, `profile_themes` | Themes you published or applied | Life of the account. Cascade-deleted with it. |
 | `integrations` | Public links to other platforms | Life of the account, or until you unlink. No private tokens stored. |
 | `post_views` | Anonymous aggregate view counts | Retained indefinitely as counts only. Never tied to a person, so nothing identifying survives. |
@@ -266,7 +375,7 @@ within 7 days of any change to data collection, as the CSL requires.
 When a user deletes their account:
 
 - `users` row is hard deleted
-- All `posts`, `likes`, `reposts`, `follows`, `notifications`, `sessions`, `integrations`, `themes` cascade delete
+- All `posts`, `likes`, `reposts`, `follows`, `notifications`, `notification_preferences`, `devices`, `sessions`, `integrations`, `themes` cascade delete
 - `post_views` rows for their posts are retained as anonymous aggregate counts — no personal data remains
 - Media files are deleted from storage within 24 hours
 
