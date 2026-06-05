@@ -6,9 +6,124 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [0.3.1] - 2026-06-05
 
 ### Added
+- **Slur filter on usernames and display names.** Registration and profile edits now reject handles and display names containing blocked terms. Leet-speak substitutions (e.g. `n1gg3r`) are normalized before matching so common evasions are caught.
+
+### Fixed
+- **Tunnel Talk invite stuck at 409.** If a pending invite expired without the recipient opening the thread (so the normal expiry path never ran), a follow-up invite attempt would always return 409. The invite endpoint now expires stale pending sessions inline before checking for conflicts.
+
+## [0.3.0] - 2026-06-05
+
+### Added
+- **Media uploads on R2.** You can now upload real images for profile pictures and post photos. Uploads go through a new `POST /media` endpoint that validates the file server-side (real format by magic bytes, size and dimension caps) before storing it in Cloudflare R2. Storage is content-addressed, so identical images are stored once, and an hourly sweep reclaims anything that's uploaded but never attached. The web composer and iOS compose sheet gain a photo picker (up to 4 per post), and on web you can also paste an image straight into the composer (Cmd/Ctrl-V); profile settings on web and iOS gain an avatar photo picker.
+- **Discord avatars on shared cards.** When you share a Discord message to Counter (or link your Discord account), the author's Discord profile picture is pulled into Counter's own storage and shown on the quote card. Identical avatars across accounts dedup to one stored image, and a changed Discord avatar replaces the old one.
+- **`/interact` Discord command.** Thing Two now has an `/interact` slash command with three fun interactions, each posting a public message that tags you: `coinflip` (heads or tails), `dice [sides]` (rolls a die, default 6, clamped 2-1000), and `8ball <question>` (a classic Magic 8-Ball reply). No Counter account, Discord link, or opt-in needed.
+- **`/ask` Discord command.** Thing Two can now chat. `/ask <prompt>` sends your question to an OpenAI-compatible endpoint and posts the reply publicly in the channel, with your question quoted above the answer.
+- **@mention chat.** You can now talk to Thing Two by mentioning it in a normal message ("@Thing Two hi") instead of only via `/ask`, and it answers like a regular member (a plain channel message, no reply-quote). It reads the last several messages of that channel for context, so follow-ups work, then forgets them. Powered by a small always-on gateway bot (`apps/bot`, Node + discord.js on Cloud Run); slash commands still run on the Worker API.
+- **Thing Two has a personality and knows the product.** Both `/ask` and @mention chat now share a single grounded system prompt: a dry, deadpan voice that will banter and argue, plus a brief of real Counter facts (the open algorithm, no individual tracking, the actual feature set) and a rule against inventing things. No more confidently made-up answers. Edit it in one place (`THING_TWO_SYSTEM_PROMPT` in `@counter/config`). Configure with `OPENAI_BASE_URL` plus `OPENAI_MODEL`, and either a static `OPENAI_API_KEY` or a Google service account (`GOOGLE_SA_CLIENT_EMAIL` + `GOOGLE_SA_PRIVATE_KEY`) for Vertex AI, where the API mints a short-lived OAuth token. When unconfigured, the command politely declines. No Counter account, Discord link, or opt-in needed.
+
+### Fixed
+- **Discord quote card spacing on web.** A Discord embed now leaves the same gap below the author header as a reposted card does, so embeds and reposts line up the same way under the profile picture.
+- **Sidebar footer buttons mismatched.** The "settings" and "log out" buttons in the nav footer now share a two-column grid, so they match each other in width and height instead of sizing to their label text.
+- **Tunnel Talk invite banner stuck after joining.** Accepting a Tunnel Talk invite from a conversation thread now clears the pending invite, so the "@x invited you to Tunnel Talk" banner no longer reappears when the call overlay closes.
+- **Empty repost cards.** Reposting a repost now reposts the underlying original instead of wrapping the repost itself. Previously, reposting a repost and then undoing the original repost left a bodyless, targetless post that rendered as a fully empty card. Such orphaned reposts are also now tombstoned ("[deleted]") rather than shown blank.
+
+### Changed
+- **Post and avatar media is set by reference.** Attaching a photo to a post now uses `media: [{ objectId }]` (an id from `POST /media`) instead of a free-form `url`, and the avatar is set with `avatarObjectId` instead of `avatarUrl`. This closes the gap where a client could point a post or profile at an arbitrary external image.
+- **Condensed sidebar nav.** The web sidebar now carries a line-icon beside each link. The three transparency/meta pages (algorithm, changelog, data disclosure) moved under a single **/about** entry with tabs, so the nav is shorter to scan. Old paths changed: `/algorithm` → `/about/algorithm`, `/changelog` → `/about/changelog`, `/data` → `/about/data` (bare `/about` lands on the Algorithm tab). Themes stays a top-level item.
+- **Discord bot stays quiet on threads you're reading.** Discord DMs for new messages and Tunnel Talk invites are now skipped when you already have that conversation open live in the web or iOS app. Push to a backgrounded phone is unaffected, so you still get pinged on a device that isn't watching the thread.
+- **iOS Integrations toggles.** The Enable/Disable buttons in Settings > Integrations are now Toggle switches. Toggling reverts automatically on API error.
+- **iOS Settings restructured.** Profile editing and badges are now on a dedicated Profile page. Notifications has its own page. Connected platforms (GitHub, Discord) moved to a dedicated Connections page. The main Settings list is now a clean navigation hub.
+- **Thing Two on iOS.** Settings > Integrations now lets you enable Discord notifications and post-from-Discord on iPhone, matching the web settings page.
+- **iOS About section expanded.** Settings > About now links to the algorithm transparency page (native, live data), the platform changelog, and the data disclosure — matching what the web has had.
+- Tunnel Talk invites now appear as a blue pill in the conversation thread ("You invited @x to Tunnel Talk" / "@x invited you to Tunnel Talk") instead of the generic "── Tunnel Talk Started ──" marker.
+
+### Added
+- **Nuke post.** A new `posts.nuke` permission and a "Nuke post" control (web menu + iOS overflow, both behind a confirmation) that permanently hard-deletes a post together with its entire reply and repost subtree. Unlike the reversible remove/restore, a nuke cannot be undone: it cascades the post's media, likes, reposts, tags, and view counts, and clears notifications and reports about the deleted posts, leaving only an audit-log entry. Held by the `admin` group by default; assignable to any group, separate from `posts.moderate`.
+- **Per-post moderation control.** Moderators (anyone with the `posts.moderate` permission) now see a controls icon in the bottom-right corner of each post, on both web and iOS. On web it opens a small menu, on iOS an overflow (•••) menu at the trailing end of the action bar; either way it removes a post or, if already removed, restores it, without leaving for the admin panel. On web the action applies in place with no page reload (a removed post swaps to its tombstone, a nuked post disappears from the feed), so a moderator can work through a feed quickly. The control is invisible to normal accounts, and the API still enforces the permission on every action.
+- **Discord quote cards on iOS.** Posts shared via "Share to Counter" now render as a styled quote card on iPhone, matching the web: Discord-blurple left accent border, Discord logo badge, quoted message, and attribution linking the author's Counter profile when connected or their Discord profile (with an external-link confirmation) when not.
+- **Post to Counter from Discord.** With your Discord account linked and posting enabled in Settings > Thing Two, use `/post <text>` to publish directly to your Counter feed, or right-click any Discord message and choose "Share to Counter" to quote it as an embedded card. If the original author has a linked Counter account their `@handle` links to their Counter profile; otherwise their Discord name links to their Discord profile with an external-link warning before navigating.
+- `POST /discord-bot/interactions` — Discord interactions webhook for slash commands and message context menus (Ed25519-verified).
+- `postingEnabled` field on `GET /discord-bot/settings` and `PUT /discord-bot/settings`.
+- **Live notifications everywhere.** Likes, follows, replies, mentions, and new messages now reach you the moment they happen while the app is open, not just on reload or via a background push. The nav badges (web) and tab badges (iOS) update live, and an open notifications list folds new items in. Built on a per-user Durable Object (`NotificationHub`) that holds one socket per open client; notifications are still saved first and pushed out after, so the channel carries nothing unsaved. Web now shows unread badges on the Notifications and Messages nav items (it had none before).
+- **No more double notifications.** When the app is open and focused, the OS push (web and iOS) is suppressed since the in-app feed already showed it; a backgrounded device still gets the push as before.
+- `GET /notifications/live` (WebSocket) and `GET /notifications/badges` — the live notification feed and the unread counts that seed the nav badges.
+- **Browser notifications (Web Push).** Enable them from Settings > Notifications to get a notification on the web when you're not on the page, the same background delivery the iOS app already has. Subscriptions are opt-in and per-browser. Payloads are sealed end to end (RFC 8291), so the push service only relays ciphertext, and the visible alert is type-only ("New message", "New follower") with no sender or content. Honours your per-type notification mutes.
+- `GET /web-push/vapid-public-key`, `POST /web-push/subscribe`, `DELETE /web-push/subscribe` — browser push subscription management.
+- **Admin control panel.** A permission-based admin system with user groups. Groups carry a fixed set of capabilities (view users, ban/suspend, manage groups, moderate posts, view/resolve reports, read the audit log, view the dashboard); a user's access is the union of the groups they're in. Ships two system groups, `admin` (everything) and `moderator` (content + reports), which can be re-permissioned but not deleted. The panel covers a stats dashboard, user management (search, assign groups, ban, suspend), group and permission editing, content moderation, the report queue, and an immutable audit log of every admin action. Available on web (`/admin`) and iOS.
+- **Reporting.** Any signed-in user can report a post or another account from web or iOS. Reports feed the moderation queue; a repeat report on the same target collapses into the existing one.
+- **Account moderation states.** Accounts can be banned (indefinite) or suspended (until a chosen time). Both block sign-in and revoke active sessions immediately; a suspension lifts itself once it expires.
+- `POST /reports` and the full `/admin/*` route group (see API.md). The private profile (`GET /users/me`) now includes `groups`, `permissions`, and `status` so a client knows whether to show the panel.
+- **Enter to send in messages.** Pressing Enter in the message compose box now sends the message. Shift+Enter inserts a newline as before.
+- **Link previews in messages.** Messages containing a URL now show an OG preview card below the bubble — site name, title, description, and cover image when available. Clicking shows a brief external-link warning (domain + confirmation) before opening in a new tab. Preview data is fetched server-side so the user's IP never reaches the target site. Works for both plain and E2EE messages (the URL is extracted after client-side decryption).
+- `GET /preview?url=` — server-side OG proxy endpoint.
+
+### Fixed
+- **Tunnel Talk no longer gets stuck on "Connecting" forever on iOS.** Signaling messages (SDP offer/answer and ICE candidates) were sent as binary WebSocket frames; the signaling relay only handles text frames and silently dropped the binary ones, so ICE negotiation never completed. iOS now sends text frames.
+- **iOS no longer prompts for Local Network access without explanation.** Added `NSLocalNetworkUsageDescription` to clarify that the permission is used by Tunnel Talk's WebRTC peer connection, not for tracking.
+- **Sending a message on web now feels instant.** The sent message appears in the thread the moment you hit send instead of after the full server round-trip and page refetch. If the send fails the textarea is restored so nothing is lost.
+- **Sending a message on iOS no longer shows "The data couldn't be read because it is missing."** `POST /messages/:username` now returns the full `DirectMessage` object instead of just `{ id }`, matching what the iOS client expects to decode and append to the thread.
+- **Tunnel Talk no longer fails to connect when TURN credentials are configured.** The Cloudflare TURN API returns `iceServers` as an object; the server was parsing it as an array, treating the first entry as `undefined`, and returning a 500 — so every P2P session fell back to error state.
+- **Declined Tunnel Talk invites now show a distinct red "Tunnel Talk Declined by @username" label** instead of the generic "Tunnel Talk Ended" marker.
+- **Tunnel Talk invite acceptance no longer crashes with a cryptic WebRTC error when TURN credential fetch fails.** A failed TURN credentials request now surfaces a clear error message instead of passing `undefined` into `RTCIceServer.urls`.
+- **iOS E2EE device key now re-registers if the initial attempt failed.** If the first registration silently failed (network error on first conversation open), the device key was permanently absent from the server because subsequent loads saw `isNew = false` and skipped registration. Now the key is re-registered whenever it is missing from the server's list, matching the web's existing retry behaviour.
+- **Encryption indicator on web now reflects current key state.** If a conversation partner registered their device keys after the web page was already loaded (e.g. they set up the iOS app while you had the thread open), the lock icon no longer stays stuck at "Server encrypted" — it refreshes automatically on mount when the server-side data shows no keys for either party.
+
+### Changed
+- **API errors now surface the real message.** Unexpected server errors previously returned the generic "Something went wrong"; they now include the actual error message so failures are diagnosable without digging through server logs.
+- **Email addresses and push tokens are now encrypted at rest.** Account emails, OAuth provider emails, and Apple push tokens are stored as AES-256-GCM ciphertext instead of plain text, so a database dump no longer exposes them. Lookups (login, signup, push delivery) use a keyed blind index, so behaviour is unchanged. No user action needed.
+- **Tunnel Talk now requires end-to-end encryption on both accounts.** An invite is only allowed when both people have a registered device key, so the session and any saved transcript are genuinely end-to-end encrypted. Accounts without E2EE set up stay on regular direct messages (server-side encryption, with the existing in-app downgrade notice). The server now rejects a saved transcript unless every message in it is an end-to-end-encrypted payload.
+- **Tunnel Talk invites now arrive live** over the conversation socket on web and iOS: a recipient sitting in the thread sees the invite banner the moment it's sent, with no polling. A pre-existing invite is still caught by a one-time check when the thread opens.
+- **Settings page** (web) now has six tabs: Profile, Connections, Notifications, Integrations, Privacy, and Account. OAuth redirects land directly on the Connections tab.
+- **Settings tabs** (web) replaced pill-shaped tab buttons with plain underline navigation to match the app's minimal style.
+
+### Added
+- **Live conversations.** A direct-message thread now stays in sync over a WebSocket without reloading. New messages from the other person appear the moment they're sent, a typing bubble shows while they type, and the online dot reflects whether they currently have the thread open. Works on web and iOS. Built on a per-conversation Durable Object (`ConversationHub`) that holds a hibernatable socket per open thread; messages are still saved through the normal send endpoint and pushed out only after they commit, so the channel never carries unsaved or unencrypted content.
+- **Typing indicators with a privacy toggle.** Settings > Privacy (web and iOS) has a "Send typing indicators" switch, on by default. Turning it off stops your typing from being relayed. The typing signal is ephemeral, never stored, and the opt-out is enforced server-side so a modified client can't bypass it.
+- `GET /messages/:username/live` — WebSocket upgrade to the conversation's live channel (messages, typing, presence). Accepts the access token via `Authorization` header or `?token=` query param.
+- `PUT /users/me/presence` now accepts `typingIndicatorsEnabled`.
+- **Thing Two** — Discord bot notification delivery. Connect your Discord account, join the Counter Discord server, and enable Thing Two in Settings > Integrations to receive your Counter notifications as Discord DMs. Off by default. Disabling or blocking the bot turns it off automatically.
+- `GET /discord-bot/settings` — read the caller's Thing Two subscription state.
+- `PUT /discord-bot/settings` — enable or disable Thing Two DMs (requires connected Discord account and Counter server membership).
+
+### Added
+- **Tunnel Talk** — peer-to-peer private chat mode. When both users are online in a conversation, either can invite the other into a live Tunnel Talk session. Messages travel directly between devices via WebRTC; Counter's servers only relay the connection handshake (SDP/ICE) and never see message content. Transcripts are off by default; both users must opt in to save, and either can revoke at any time (revocation permanently deletes the saved transcript). Session markers appear in the conversation thread, with either an asterisk (nothing saved) or the transcript inline.
+- **Badges section** in settings (iOS and web). Verified platform connections (GitHub, Discord, and others) now appear in a dedicated Badges section with platform icons and username. Each badge can be toggled on or off to control what appears on your public profile. The old flat "Links" label is replaced with "Badges".
+- `PATCH /integrations/:id` — toggle `displayed` to show or hide a verified badge without removing the underlying link.
+- GitHub and Discord profile badges are clickable: GitHub links to `github.com/{username}`, Discord links to `discord.com/users/{id}`.
+- **iOS + Web:** Compose button in the Messages inbox. On iOS, tap the pencil icon in the toolbar; on web, tap the pencil icon next to the "Messages" heading. Both open a user-search interface to start a conversation without visiting someone's profile first. Tap the pencil icon to search for any user and open a new conversation without navigating to their profile first.
+- Profile post filter: tap "Posts" or "Posts & Replies" on any profile to switch between root posts only (default) and all posts including replies.
+- `GET /users/:username/posts` now accepts a `filter` query parameter: `posts` (default, excludes replies) or `all` (includes replies).
+- **Message requests.** When someone who isn't in your allowed group tries to message you, they can send one message request. The request sits in your inbox under a new Requests tab. You can accept (starts a normal conversation) or decline (deletes the thread). The sender cannot send more messages until you accept.
+- **"Who can message me" privacy setting** in Settings > Privacy. Options: Everyone (default), My followers only (others get the request flow), or No one (all messages and requests blocked).
+- `GET /messages/:username/info` — returns conversation status (`active`, `request`, or `null`) and whether the viewer is the recipient of a pending request.
+- `POST /messages/:username/accept` — accepts an inbound message request, switching the conversation to active.
+- GitHub and Discord OAuth integration. Connect either platform from your profile settings to get a verified trust badge without the manual rel="me" step. Disconnecting removes the OAuth credential and reverts the badge.
+- Sign in or sign up via GitHub or Discord. Existing accounts are matched by email; new accounts are created with a username derived from your provider handle.
+- `GET /auth/github`, `GET /auth/github/connect`, `GET /auth/github/callback` — GitHub OAuth start, connect, and callback.
+- `GET /auth/discord`, `GET /auth/discord/connect`, `GET /auth/discord/callback` — Discord OAuth start, connect, and callback.
+- `POST /auth/session/exchange` — trade the one-time session code from an OAuth login callback for a JWT pair.
+- `DELETE /auth/github/disconnect`, `DELETE /auth/discord/disconnect` — remove a linked provider credential.
+- `GET /auth/:provider/me` — connected account info (handle, email, connected date) for the authenticated user.
+- `POST /auth/:provider/connect/prepare` — returns the provider auth URL for mobile OAuth linking (body: `{ mobile: true }`).
+- Web login and register pages now show "Continue with GitHub" and "Continue with Discord" buttons alongside the password form.
+- iOS login and register screens now show GitHub and Discord sign-in buttons below the password form.
+- iOS settings "Connected platforms" section: connect or disconnect GitHub and Discord with one tap.
+- Web settings "Connected accounts" section: same connect/disconnect UI.
+
+### Changed
+- GitHub and Discord buttons now show the platform logo everywhere they appear. On web this adds logos to the "Connected accounts" rows in settings (the login and register buttons already had them); on iOS it adds logos to the sign-in/sign-up buttons and the "Connected platforms" settings rows.
+
+### Fixed
+- iOS: Clear and Delete buttons in the encryption info popover now trigger their confirmation dialogs correctly (popover dismissal was racing the dialog presentation).
+- iOS: Clear and Delete buttons in the encryption info popover now use the same solid pill style as the swipe actions in the inbox.
+
+### Added
+- Feed posts with replies now show a thread preview: up to two replies appear inline below the post, connected by a vertical line, so you can see the conversation without tapping through.
+- Profile page now shows your own online indicator whenever online status is enabled in settings, so there's a clear visual confirmation the feature is on even before the first heartbeat fires.
+- iOS: inbox rows now show a green lock for end-to-end encrypted messages and a blue lock for server-encrypted messages, and a direction arrow indicating whether the last message was sent or received.
 - iOS: opening a conversation now shows a centered "Decrypting" state with an animated lock icon and progress bar while messages are being fetched and decrypted, replacing the blank black screen.
 - Online status and last-seen indicators on profiles. Both features are off by default and must be explicitly enabled in Settings > Privacy > Online Status. Each has its own independent visibility setting (everyone, followers, or followers you follow back). The heartbeat interval is configurable from 60 to 3600 seconds.
 - `GET /users/me/presence` — read your own presence settings.
