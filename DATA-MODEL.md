@@ -33,6 +33,7 @@ users
   status                      text          DEFAULT 'active' NOT NULL  -- 'active' | 'suspended' | 'banned'
   status_reason               text                       -- moderator's note, shown to the user on a blocked login
   suspended_until             timestamptz                -- suspension expiry; null for a ban or an active account
+  bot_kind                    text                       -- null for humans; names a bot persona (e.g. 'thing_one') for server-designated bot accounts
   created_at                  timestamptz   DEFAULT now()
   updated_at                  timestamptz   DEFAULT now()
 ```
@@ -42,6 +43,8 @@ users
 `online_status_enabled` and `last_seen_enabled` are independent toggles. Each has its own visibility column that controls who can see that field. Both are off by default. `last_seen_at` is updated every time the client calls the heartbeat endpoint, regardless of toggle state, so re-enabling a feature shows accurate data immediately.
 
 `messaging_privacy` controls who can start a new conversation. `'everyone'` allows direct messages from anyone. `'followers'` restricts direct messages to accounts that follow the recipient; anyone else can still send one message request, which the recipient can accept or decline. `'nobody'` blocks all incoming messages and requests.
+
+`bot_kind` is the bot allowlist. It is null for every normal account; a non-null value (e.g. `'thing_one'`) marks the account as a server-designated bot and names its persona. It is only ever set server-side (migration, seed, or direct SQL), never through any API surface, so a client cannot promote an arbitrary account to a bot. A bot replies when a post or reply @mentions it, and also when a new reply lands in a thread it is already part of (so it keeps talking without being re-tagged); the reply is authored by the bot and threaded under the post it answers. A bot post never triggers further bot replies (no loops) and a bot answers any given post at most once (no duplicates). Bot accounts also cannot be DMed: `POST /messages/:username` rejects them outright, regardless of `messaging_privacy`.
 
 `typing_indicators_enabled` is on by default. When on, the live conversation channel (the `ConversationHub` Durable Object) relays this user's typing to the person they're chatting with. The typing signal is ephemeral, it lives only in the socket and is never written to any table, so it leaves no trail. The toggle is enforced server-side: the `GET /messages/:username/live` route reads the flag and the hub drops typing frames from a user who turned it off, so a patched client can't leak typing the user disabled.
 
@@ -79,6 +82,58 @@ sessions
   created_at      timestamptz   DEFAULT now()
   expires_at      timestamptz   NOT NULL
   last_used_at    timestamptz
+```
+
+---
+
+## password_resets
+
+Pending password-reset tokens, one row per outstanding request. Only the SHA-256 of a high-entropy random token is stored, never the token itself, so a database leak can't be replayed to seize an account. Issued by the public "forgot password" flow and by an admin with `users.reset_password`; redeeming sets a new `password_hash`, burns every token for the user, and wipes their sessions. Tokens expire after one hour.
+
+```sql
+password_resets
+  id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
+  token_hash      text          NOT NULL
+  expires_at      timestamptz   NOT NULL
+  created_at      timestamptz   DEFAULT now()
+```
+
+---
+
+## webauthn_credentials
+
+Registered passkeys. Each row is an authentication factor, not message encryption (that's `device_keys`). Counter stores only the credential's public key and the signature counter, never anything that could impersonate the authenticator. The counter only moves forward; a value that goes backwards is the classic cloned-authenticator signal and fails verification. base64url strings come straight from the WebAuthn ceremony and are stored verbatim.
+
+```sql
+webauthn_credentials
+  id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
+  credential_id   text          NOT NULL          -- base64url, unique
+  public_key      text          NOT NULL          -- base64url COSE key
+  counter         bigint        NOT NULL DEFAULT 0
+  transports      text                            -- JSON array, nullable
+  device_type     text                            -- 'singleDevice' | 'multiDevice'
+  backed_up       boolean       NOT NULL DEFAULT false
+  nickname        text                            -- user label
+  created_at      timestamptz   DEFAULT now()
+  last_used_at    timestamptz
+```
+
+---
+
+## webauthn_challenges
+
+Short-lived passkey ceremony nonces, one row per in-flight registration or authentication, deleted when the ceremony finishes. A challenge is a single-use nonce (useless without the matching private key), not a bearer credential, so it's stored in plaintext rather than hashed the way refresh tokens are. `user_id` is null for login challenges, where the account isn't known until the assertion resolves a credential.
+
+```sql
+webauthn_challenges
+  id              uuid          PRIMARY KEY DEFAULT gen_random_uuid()
+  challenge       text          NOT NULL
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE   -- null for login
+  ceremony        text          NOT NULL          -- 'registration' | 'authentication'
+  expires_at      timestamptz   NOT NULL
+  created_at      timestamptz   DEFAULT now()
 ```
 
 ---
@@ -449,7 +504,10 @@ post_views
 
 ## themes
 
-Flat JSON of CSS variables. Validated on write, never executed.
+Flat JSON of CSS variables. Validated on write, never executed. `variables`
+covers colours plus typography (`--font-design`, `--letter-spacing`), geometry
+(`--radius`, `--density`), and surface treatment (`--surface-blur`,
+`--surface-opacity`, `--surface-shadow`) — enough for glass and terminal looks.
 
 ```sql
 themes
@@ -457,8 +515,9 @@ themes
   user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
   name            text          NOT NULL
   description     text
-  variables       jsonb         NOT NULL  -- { "--color-bg": "#0d0d0d", ... }
+  variables       jsonb         NOT NULL  -- { "--color-bg": "#0d0d0d", "--surface-blur": "14px", ... }
   published       boolean       DEFAULT true
+  official        boolean       DEFAULT false  -- Counter's curated catalog; set only by seed, never via API. Browse lists these first.
   created_at      timestamptz   DEFAULT now()
   updated_at      timestamptz   DEFAULT now()
 ```
@@ -495,6 +554,20 @@ profile_themes
   theme_id        uuid          REFERENCES themes(id) ON DELETE SET NULL
   custom_variables jsonb        -- user's local overrides, synced only if user opts in
   updated_at      timestamptz   DEFAULT now()
+```
+
+---
+
+## saved_themes
+
+A user's library of themes saved from other people's galleries (their own authored themes are found via `themes.user_id`). Membership only: this records *which* themes are in a user's library, not which one is applied. Applying a theme stays on-device.
+
+```sql
+saved_themes
+  user_id         uuid          REFERENCES users(id) ON DELETE CASCADE
+  theme_id        uuid          REFERENCES themes(id) ON DELETE CASCADE
+  created_at      timestamptz   DEFAULT now()
+  PRIMARY KEY (user_id, theme_id)  -- a theme is saved at most once per user
 ```
 
 ---
@@ -678,8 +751,10 @@ nothing is kept "just in case."
 | `notifications` | Telling you what happened | Life of the account. Cascade-deleted with it. |
 | `notification_preferences` | Which notification types you've muted | Life of the account. Cascade-deleted with it. |
 | `device_keys` | E2EE public key per registered device | Life of the account, or until the device re-registers with a new key (upsert replaces the old row). Cascade-deleted with the account. The private key is never stored here. |
+| `webauthn_credentials` | Registered passkeys (public key + signature counter) | Life of the account, or until you remove the passkey from settings. Cascade-deleted with the account. No private key or biometric data is stored. |
+| `webauthn_challenges` | Single-use passkey ceremony nonces | 5 minutes. Consumed (deleted) when the ceremony finishes; expired rows are harmless nonces. |
 | `devices` | Push delivery address (opaque APNs token) | Life of the account, or until you sign out on that device. Cascade-deleted with the account. No device or location data. |
-| `themes`, `profile_themes` | Themes you published or applied | Life of the account. Cascade-deleted with it. |
+| `themes`, `profile_themes`, `saved_themes` | Themes you published, applied, or saved to your library | Life of the account. Cascade-deleted with it. |
 | `integrations` | Public links to other platforms | Life of the account, or until you unlink. |
 | `oauth_accounts` | Linked OAuth credentials (GitHub, Discord) | Life of the account, or until you disconnect the provider. Encrypted tokens are deleted with the row. |
 | `oauth_states` | CSRF state for in-flight OAuth flows | 10 minutes. Consumed (deleted) in the callback; expired rows are cleaned up on next use. |
@@ -697,7 +772,7 @@ within 7 days of any change to data collection, as the CSL requires.
 When a user deletes their account:
 
 - `users` row is hard deleted
-- All `posts`, `likes`, `reposts`, `follows`, `notifications`, `notification_preferences`, `devices`, `sessions`, `integrations`, `themes` cascade delete
+- All `posts`, `likes`, `reposts`, `follows`, `notifications`, `notification_preferences`, `devices`, `sessions`, `password_resets`, `integrations`, `themes`, `saved_themes` cascade delete
 - `post_views` rows for their posts are retained as anonymous aggregate counts — no personal data remains
 - Media files are deleted from storage within 24 hours
 

@@ -18,11 +18,30 @@ The API is the product. Every client — web, iOS, macOS, third-party — talks 
 | POST | `/auth/refresh` | Trade a refresh token for a fresh pair |
 | POST | `/auth/verify` | Redeem an email verification token (no auth) |
 | POST | `/auth/verify/request` | Resend the verification email (authenticated) |
+| POST | `/auth/password-reset/request` | Request a reset link by email (no auth). Body: `{ email }`. Always returns `{ ok: true }`, whether or not the address matches an account. |
+| POST | `/auth/password-reset/confirm` | Set a new password with a reset token (no auth). Body: `{ token, password }`. Logs the account out everywhere on success. |
+| POST | `/auth/password` | Set or change the signed-in user's password (authenticated). Body: `{ currentPassword?, newPassword }`. `currentPassword` is required only if the account already has a password; OAuth-only accounts setting their first password omit it. Keeps all other sessions signed in. |
 | DELETE | `/auth/account` | Permanently delete account and all data |
 | GET | `/auth/keys` | List all device keys registered for the authenticated account |
 | POST | `/auth/keys` | Register or upsert the E2EE key for one device (body: `{ deviceId, publicKey }`) |
 
 Email verification is optional. It earns the ✦ verified badge and gates nothing.
+
+### Passkeys (WebAuthn)
+
+Passwordless, phishing-resistant sign-in. Registration runs under an authenticated session; authentication is public and discoverable (usernameless). The ceremony JSON is the standard `@simplewebauthn` shape.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/auth/passkeys/register/options` | Begin enrolling a passkey (authenticated). Returns `PublicKeyCredentialCreationOptionsJSON`. |
+| POST | `/auth/passkeys/register/verify` | Finish enrolling (authenticated). Body: `{ response, nickname? }`. |
+| POST | `/auth/passkeys/authenticate/options` | Begin a passwordless login (no auth). Returns `PublicKeyCredentialRequestOptionsJSON`. |
+| POST | `/auth/passkeys/authenticate/verify` | Finish login (no auth). Body: `{ response }`. Returns an `AuthResponse`. |
+| GET | `/auth/passkeys` | List the caller's passkeys (authenticated). Returns `PasskeySummary[]`. |
+| PATCH | `/auth/passkeys/:id` | Rename a passkey (authenticated). Body: `{ nickname }`. |
+| DELETE | `/auth/passkeys/:id` | Remove a passkey (authenticated). |
+
+Only the credential public key and signature counter are stored. A counter that fails to advance (cloned-authenticator signal) fails verification. Challenges are short-lived single-use nonces.
 
 ---
 
@@ -100,6 +119,8 @@ Feed responses embed `topReplies` on each post: an array of up to two oldest dir
 | POST | `/posts/:id/replies` | Reply to a post |
 | GET | `/posts/:id/replies` | Get replies to a post |
 
+**Bot replies.** A server-designated bot account (a user with `bot_kind` set) replies in two cases: when a post or reply @mentions it, and when a new reply lands in a thread the bot is already part of (so it keeps talking without being re-tagged). The reply is authored by the bot and threaded under the post it answers, generated in the background so it doesn't delay the response. Guards: a post authored by a bot never triggers further bot replies (no loops), and a bot answers any given post at most once (no duplicates).
+
 ---
 
 ## Media
@@ -164,7 +185,7 @@ Messages are end-to-end encrypted (E2EE): the server stores ciphertext and canno
 | GET | `/messages/:username` | Conversation thread with a user |
 | GET | `/messages/:username/info` | Conversation status (`active`, `request`, or `null`) and whether this is an inbound request for the viewer |
 | GET | `/messages/:username/live` | WebSocket upgrade to the conversation's live channel (the `ConversationHub` Durable Object). Pushes new messages, relays typing, and reports in-thread presence. Accepts `Authorization: Bearer` or `?token=` query param (browsers can't set headers on a WebSocket). Server-to-client frames: `message`, `presence`, `presence_state`, `tunnel_invite`; client-to-server: `typing` (dropped when the sender has typing indicators off). Returns a validation error when Durable Objects aren't bound (e.g. the Bun dev server). |
-| POST | `/messages/:username` | Send a message. On first contact, checks recipient's `messagingPrivacy`; creates a request conversation when the sender isn't allowed to message directly. Blocked if the conversation is a pending request. |
+| POST | `/messages/:username` | Send a message. On first contact, checks recipient's `messagingPrivacy`; creates a request conversation when the sender isn't allowed to message directly. Blocked if the conversation is a pending request. Bot accounts (`bot_kind` set) reject all DMs with 403, regardless of `messagingPrivacy`. |
 | POST | `/messages/:username/accept` | Accept an inbound message request; switches the conversation to `active`. Only callable by the recipient. |
 | POST | `/messages/:username/read` | Mark all messages from a user as read |
 | POST | `/messages/:username/screenshot` | Record a screenshot event in the transcript (conversation must exist) |
@@ -285,6 +306,21 @@ Thing Two is Counter's Discord bot. Users who have connected their Discord accou
 
 ---
 
+## GitHub Webhook (Thing Five)
+
+Thing Five announces pushes in Discord. A GitHub org webhook points at the endpoint below; verified default-branch pushes get a message in Five's voice (a short model-written quip, then a commit summary) posted to a fixed channel as Five.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/github/webhook` | GitHub HMAC | GitHub webhook receiver. Verifies the `x-hub-signature-256` HMAC-SHA256 against `GITHUB_WEBHOOK_SECRET`, then on a `push` event to the repo's default branch (owner in `GITHUB_COMMIT_ORGS`) posts an announcement to `DISCORD_COMMIT_CHANNEL_ID` as Thing Five via `THING_FIVE_BOT_TOKEN`. Returns 501 if no secret is configured, 401 on a bad signature, and 2xx (ignored) for `ping`, non-`push` events, and pushes that don't qualify. |
+
+**Setup**
+
+1. Set `GITHUB_WEBHOOK_SECRET`, `THING_FIVE_BOT_TOKEN`, and `DISCORD_COMMIT_CHANNEL_ID` in `.dev.vars` / wrangler secrets (optionally `GITHUB_COMMIT_ORGS`, default `anti-ltd,counter-ltd`). Deploy Five's persona with `scripts/deploy-ask-prompt.sh` so the quip has a voice.
+2. Add an org webhook in GitHub (Settings → Webhooks) for each org: payload URL `https://api.counter.ltd/github/webhook`, content type `application/json`, the same secret, and the "Pushes" event only.
+
+---
+
 ## Integrations
 
 Linked external accounts. All optional, linked at user discretion. Ownership is
@@ -311,11 +347,15 @@ The `Integration` response shape includes `id`, `platform`, `username`, `url`, `
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/themes` | Get public themes (browsable, no auth) |
+| GET | `/themes/library` | Your library: themes you created plus ones you saved (auth) |
 | GET | `/themes/:id` | Get a single theme |
-| POST | `/themes` | Publish a theme |
+| POST | `/themes` | Create a theme (`published: false` for a private draft) |
+| PATCH | `/themes/:id` | Edit own theme (partial: name, description, variables, published) |
 | DELETE | `/themes/:id` | Delete own theme |
+| POST | `/themes/:id/save` | Save a theme to your library (auth) |
+| DELETE | `/themes/:id/save` | Remove a theme from your library (auth) |
 
-Themes are flat JSON objects of CSS variables. Validated server-side for structure, never executed.
+Themes are flat JSON objects of CSS variables. Validated server-side for structure, never executed. The `variables` map spans more than colours: typography (`--font-design`, `--font`, `--letter-spacing`), geometry (`--radius`, `--density`), and surface treatment (`--surface-blur`, `--surface-opacity`, `--surface-shadow`). The API stores whatever well-formed `--*` tokens it's given; the clients decide which they consume. Each `Theme` carries an `official` flag (Counter's curated catalog, set only by the seed, never via the API); `GET /themes` lists official themes first. `/themes/library` returns `{ created, saved }`: themes you authored (drafts included) and published themes you saved from others. Saving is library membership only; which theme is *applied* stays on-device and is never sent to the server.
 
 ---
 
@@ -408,7 +448,8 @@ open one rather than creating a duplicate.
 The control panel. Every endpoint requires authentication **and** a specific
 permission, resolved as the union of the caller's group memberships. Missing the
 permission returns 403. Permissions are a fixed catalogue (`dashboard.view`,
-`users.view`, `users.manage_groups`, `users.ban`, `users.suspend`, `groups.view`,
+`users.view`, `users.manage_groups`, `users.ban`, `users.suspend`,
+`users.reset_password`, `groups.view`,
 `groups.manage`, `posts.moderate`, `posts.nuke`, `reports.view`,
 `reports.resolve`, `audit.view`). The `admin` system group always holds all of
 them.
@@ -427,6 +468,7 @@ Every state-changing action writes an immutable `admin_audit_log` entry.
 | POST | `/admin/users/:id/unban` | `users.ban` | Lift a ban, returning the account to `active`. |
 | POST | `/admin/users/:id/suspend` | `users.suspend` | Suspend until a time and revoke sessions. Body: `{ until (ISO, future), reason? }`. Auto-lifts at next login once expired. Cannot suspend yourself. |
 | POST | `/admin/users/:id/unsuspend` | `users.suspend` | End a suspension early. |
+| POST | `/admin/users/:id/password-reset` | `users.reset_password` | Start a password reset. Body: `{ delivery: 'email' \| 'link' }`. `email` mails the user the link; `link` returns `{ link }` in the response to hand over directly. |
 | GET | `/admin/groups` | `groups.view` | All groups with permission sets and member counts. |
 | GET | `/admin/groups/:id` | `groups.view` | One group. |
 | POST | `/admin/groups` | `groups.manage` | Create a group. Body: `{ slug, name, description?, color?, permissions[] }`. |

@@ -6,9 +6,110 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.12.0] - 2026-06-06
+
+### Added
+- **Thing Five announces commits.** Thing Five now has a job: every push to the default branch of a repo in the anti-ltd or counter-ltd orgs gets a Discord post in his voice, a short reaction followed by the repo, branch, commit messages, and a compare link. Driven by a signed GitHub org webhook; feature-branch pushes and other orgs are ignored.
+
+## [0.11.4] - 2026-06-06
+
+### Added
+- **counter.ltd/discord shortlink.** Visiting `/discord` now redirects to the Counter Discord server.
+
+## [0.11.3] - 2026-06-06
+
+### Changed
+- **Admin user and group management redesigned.** Users can now be selected with checkboxes for bulk actions: add to group, ban, or suspend applies to all selected users at once. The manage/edit forms no longer expand inline under the row — they open as a persistent side panel on the right so the table stays visible while you work. Selecting one user shows their full control set; selecting several shows the bulk-capable subset. Group editing works the same way: clicking edit opens the group editor in the side panel rather than a tray under the row.
+
+## [0.11.2] - 2026-06-06
+
+### Changed
+- **Admin panel redesign.** The control panel got a full visual pass to match the rest of Counter. Users and groups are now proper tables, with the per-row controls parked in their own Actions column on the right and the manage/edit forms opening as a full-width tray beneath the row instead of crowding it. Dashboard stats, the report queue, and the audit log also sit on proper surfaces with a clearer hierarchy: an eyebrow over the title, status badges with coloured dots, accent rails on stats and open reports, and group-colour swatches. Everything is built from the theme tokens, so it switches with light, dark, and glass themes like the rest of the app.
+
+## [0.11.1] - 2026-06-06
+
+### Fixed
+- **Hashtags no longer 404.** Clicking a `#tag` in a post now opens a page listing every post that uses it, newest first. Previously these links led to a not-found page. An unused tag shows an empty feed instead of an error.
+
+## [0.11.0] - 2026-06-06
+
+### Added
+- **Official theme catalog.** Browse now opens on a curated set of Counter themes, marked with an Official badge and listed first: Counter Dark and Light, Rounded, a real **Liquid Glass**, Terminal, plus Nord, Dracula, Solarized Dark, Gruvbox, Synthwave, Sepia, and Mono Light. Apply any of them with one tap on web or iOS.
+- **Real refractive liquid glass.** The Liquid Glass theme renders genuine frosted, refractive surfaces: translucent panels that blur and saturate whatever's behind them, with a lit specular rim and a soft drop shadow. On iOS it uses the system liquid-glass material where available.
+
+### Changed
+- **Presets moved out of the theme editor.** The old Default / Glass / Terminal one-tap presets are gone from Create; they live in Browse as official themes you can apply or copy. Create starts from the default and is purely for building your own. (The previous "Liquid Glass" preset was really just rounded corners; it's now the **Rounded** official theme, and Liquid Glass is the new refractive one.)
+
+## [0.10.0] - 2026-06-06
+
+### Changed
+- **Settings split into separate pages.** The settings screen used to stack every section on one page behind a row of tabs, which got crowded. Each section now has its own page under `/settings` — Profile, Connections, Notifications, Integrations, Privacy, and Account — reachable from a side nav, so you only see one section at a time. Opening `/settings` lands you on Profile. Within Privacy, presence, messaging, and devices are now three separate cards.
+
+## [0.9.0] - 2026-06-06
+
+### Added
+- **Thing Five joins Discord.** Thing Two has company. Thing Five is a second Discord bot with its own personality — Thing Two's chaos twin — that answers @mentions the same way Thing Two does. It runs as its own always-on service off the same bot code.
+- **The bots banter.** Thing Two and Thing Five now bicker with each other, not just with people. It's loop-guarded so it can't run away: a bot only ever engages its known sibling, chimes in unprompted only some of the time, and goes quiet once the two have gone back and forth a few times with no human between them. A human message restarts it. Cadence and the back-and-forth cap are tunable per deploy.
+- **Reply to a bot to talk to it.** You no longer need an @mention. Replying to one of Thing Two or Thing Five's messages reaches it whether or not the reply pings.
+- **The bots crash each other's mentions.** Tag or reply to just Thing Two and Thing Five will sometimes jump in anyway, and the same the other way round. Only when the other one was addressed, and only some of the time, so it stays a fun surprise rather than both bots answering everything.
+- **Tag both to set them off.** Mention Thing Two and Thing Five together and they take it as a cue to talk to each other instead of firing two separate answers at you.
+- **The bots use reaction gifs.** Thing Two and Thing Five can drop a reaction gif when it lands, picked from a small curated set. It's rare on purpose, a hard per-channel cooldown keeps a gif a punchline instead of wallpaper.
+- **Thing Five crashes out.** Very rarely, Thing Five loses the plot entirely for a single message, a full feral meltdown, then snaps back like nothing happened.
+
+### Changed
+- **Thing Two is funnier and less defensive.** Reworked persona so Thing Two stops explaining its jokes, drops the help-desk "my purpose is to help" register, and flips teasing back instead of justifying itself.
+
+## [0.8.0] - 2026-06-06
+
+### Added
+- **Full theme customization.** Themes go far past colours now. The editor (web and iOS) gains **typography** (system, monospace, serif, or rounded fonts, plus letter spacing on web), **geometry** (corner roundness, and spacing density on web), and **surface** controls (translucency, blur, and a drop shadow) — enough to build a frosted **liquid-glass** look or a sharp **monospace terminal** look. Three one-tap presets — **Default**, **Liquid Glass**, and **Terminal** — seed the whole set as a starting point, and the live preview shows the font, corners, and glass updating as you go. Themes authored on either platform render the same on the other.
+
+## [0.7.2] - 2026-06-06
+
+### Added
+- **Edit your themes.** Themes you created can now be changed after the fact. On web, hit Edit on any theme under your Library to reopen it in the editor with its colours and name loaded; on iOS, swipe a created theme right and tap Edit. Save the changes as a draft or publish, and if the theme is the one you're currently using, the change applies live. Editing only works on your own themes.
+
+## [0.7.1] - 2026-06-06
+
+### Fixed
+- **Themes page crashed after creating a theme with repeated colours.** A theme that reused the same colour for more than one of its headline swatches (background, accent, accent-2, text) made the gallery render with duplicate keys and threw, leaving the whole themes page inaccessible. The swatch strip now keys by position, so any colour combination renders fine. No themes were lost; affected libraries load again.
+
+## [0.7.0] - 2026-06-06
+
+### Added
+- **Themes split into Library, Browse, and Create.** The themes page is now three tabs. **Browse** is the public gallery of every published theme. **Library** is your own themes plus any you've saved from Browse, kept on your account so it follows you across devices. **Create** is a live editor: pick from the full colour palette and an example post, buttons, and chips recolour in real time as you drag, then save it as a private draft or publish it for everyone.
+- **Save themes to your library.** Found a theme in Browse you like? Save it to your Library without applying it, and unsave it later. Applying a theme still happens instantly and stays on your device, exactly as before.
+- **iOS themes match the web.** The iOS Appearance → Themes screen now has the same Library / Browse / Create split. Browse and save published themes, swipe to save or unsave, and build your own in a live colour editor where an example post recolours as you drag each picker. Save it as a private draft or publish it.
+
+## [0.6.0] - 2026-06-06
+
+### Added
+- **Passkeys.** Sign in without a password using Face ID, Touch ID, or a security key. Add a passkey from Account settings (web and iOS), then use "Sign in with a passkey" on the login screen, no username needed. Passkeys are phishing-resistant and never leave your device; Counter only ever stores the public key. You can name, list, and remove your passkeys from settings.
+- **Set or change your password from settings.** Accounts that signed up with GitHub or Discord can now add a password to also sign in directly, and password users can change theirs, both from the Account tab without going through the email reset flow. Changing your password keeps your other devices signed in (a full reset still signs everything out).
+
+## [0.5.0] - 2026-06-05
+
+### Fixed
+- **Tunnel Talk stuck on "Connecting…" forever.** ICE failures and network timeouts now surface a clear error message instead of leaving the dialog indefinitely in the connecting state. The connecting badge also shows which stage is stuck: "Connecting to relay…", "Waiting for @username…", or "Establishing link…".
+- **Tunnel Talk invite failures shown silently.** When an invite failed (partner went offline between render and click, pending session already exists, etc.) the button just re-enabled with no message. The error from the server is now shown inline below the button.
+
+### Added
+- **Nested reply previews.** Feed and profile cards now show the oldest replies under a post, with the author and a snippet, and a reply that itself drew a reply shows that nested response threaded one level below it. New on the web; the iOS preview gained the nested level too, plus a timestamp and verified tick on each reply and a connector line that traces down through the nesting. Each preview links straight to that reply. The thread page is unchanged, where every reply is listed in full.
+
+## [0.4.1] - 2026-06-05
+
+### Fixed
+- **Post images stretched off-screen on iOS.** A single attached image could balloon past its box, bleeding edge to edge and far taller than its slot, with the rounded corners gone. Media cells now crop to a fixed display box again.
+
+## [0.4.0] - 2026-06-05
+
+### Added
+- **Password reset.** Forgot your password? The login page now links to a reset flow: enter your account email and we mail a one-time link (good for one hour) to set a new one. The request always reports the same "check your inbox", whether or not the address is registered, so it can't be used to probe which emails have accounts, and it's rate-limited to one email per 15 minutes per account. Setting a new password signs out every device. Admins with the new `users.reset_password` permission can also start a reset from the user panel, either mailing the link to the user or generating one to hand over directly (for an account whose email is dead). Reset tokens are stored only as hashes, never in the clear.
+
 ## [0.3.1] - 2026-06-05
 
 ### Added
+- **Thing One, a bot that lives on Counter.** Mention a designated bot account in a post or reply and it answers, threaded under your mention, in character. Bot accounts are an allowlist: only the server can mark an account as a bot (a `bot_kind` flag that no API can set), so nobody can turn their own account into an auto-replying bot. Bot accounts also can't be DMed; you talk to them in the open. A post authored by a bot never triggers another bot reply, so bots can't loop.
 - **Slur filter on usernames and display names.** Registration and profile edits now reject handles and display names containing blocked terms. Leet-speak substitutions (e.g. `n1gg3r`) are normalized before matching so common evasions are caught.
 
 ### Fixed
