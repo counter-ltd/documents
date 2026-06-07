@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.12.1] - 2026-06-06
+
+### Fixed
+- **Liquid Glass actually looks like glass now.** The frosted panels were blurring a flat background, so they read as tinted plastic with nothing to refract. The web app now lays a soft, slowly drifting wash of the theme's accent colours behind everything, so a translucent panel blurs and saturates real colour blooming through its edges. It only paints for translucent (glass) themes; flat themes are untouched.
+- **Dropdown menus match the glass.** The topic picker and the other custom dropdowns were solid slabs that broke the effect when open. They now use the same translucent, blurred surface as every other panel, so on a glass theme they frost the content behind them and on a flat theme they stay solid.
+
 ## [0.12.0] - 2026-06-06
 
 ### Added
